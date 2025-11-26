@@ -31,11 +31,15 @@ interface Product {
   imageUrls: string[];
 }
 
+const ALL_CATEGORIES = "__all_categories__";
+const ALL_SUBCATEGORIES = "__all_subcategories__";
+
 export default function Home() {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [subCategories, setSubCategories] = useState<string[]>([]);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState(""); 
   const [selectedCategory, setSelectedCategory] = useState<string | undefined>(
     undefined
   );
@@ -43,6 +47,7 @@ export default function Home() {
     string | undefined
   >(undefined);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/categories")
@@ -52,7 +57,10 @@ export default function Home() {
 
   useEffect(() => {
     if (selectedCategory) {
-      fetch(`/api/subcategories`)
+      const params = new URLSearchParams();
+      params.append("category", selectedCategory);
+
+      fetch(`/api/subcategories?${params.toString()}`)
         .then((res) => res.json())
         .then((data) => setSubCategories(data.subCategories));
     } else {
@@ -61,21 +69,44 @@ export default function Home() {
     }
   }, [selectedCategory]);
 
+  // search only updates debouncedSearch every 2 seconds 
   useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search.trim());
+    }, 2000); 
+
+    return () => clearTimeout(timer);
+  }, [search]);
+
+
+  useEffect(() => {
+    setError(null);
     setLoading(true);
     const params = new URLSearchParams();
-    if (search) params.append("search", search);
+    if (debouncedSearch) params.append("search", debouncedSearch);
     if (selectedCategory) params.append("category", selectedCategory);
     if (selectedSubCategory) params.append("subCategory", selectedSubCategory);
     params.append("limit", "20");
 
     fetch(`/api/products?${params}`)
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error("Failed to load products");
+        }
+        return res.json();
+      })
       .then((data) => {
         setProducts(data.products);
+      })
+      .catch((err: unknown) => {
+        console.error("Error loading products", err);
+        setError("Failed to load products. Please try again.");
+        setProducts([]);
+      })
+      .finally(() => {
         setLoading(false);
       });
-  }, [search, selectedCategory, selectedSubCategory]);
+  }, [debouncedSearch, selectedCategory, selectedSubCategory]); 
 
   return (
     <div className="min-h-screen bg-background">
@@ -95,13 +126,20 @@ export default function Home() {
             </div>
 
             <Select
-              value={selectedCategory}
-              onValueChange={(value) => setSelectedCategory(value || undefined)}
+              value={selectedCategory ?? ALL_CATEGORIES}
+              onValueChange={(value) => {
+                if (value === ALL_CATEGORIES) {
+                  setSelectedCategory(undefined);
+                } else {
+                  setSelectedCategory(value);
+                }
+              }}
             >
               <SelectTrigger className="w-full md:w-[200px]">
                 <SelectValue placeholder="All Categories" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value={ALL_CATEGORIES}>All Categories</SelectItem>
                 {categories.map((cat) => (
                   <SelectItem key={cat} value={cat}>
                     {cat}
@@ -112,15 +150,22 @@ export default function Home() {
 
             {selectedCategory && subCategories.length > 0 && (
               <Select
-                value={selectedSubCategory}
-                onValueChange={(value) =>
-                  setSelectedSubCategory(value || undefined)
-                }
+                value={selectedSubCategory ?? ALL_SUBCATEGORIES}
+                onValueChange={(value) => {
+                  if (value === ALL_SUBCATEGORIES) {
+                    setSelectedSubCategory(undefined);
+                  } else {
+                    setSelectedSubCategory(value);
+                  }
+                }}
               >
                 <SelectTrigger className="w-full md:w-[200px]">
                   <SelectValue placeholder="All Subcategories" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value={ALL_SUBCATEGORIES}>
+                    All Subcategories
+                  </SelectItem>
                   {subCategories.map((subCat) => (
                     <SelectItem key={subCat} value={subCat}>
                       {subCat}
@@ -151,6 +196,10 @@ export default function Home() {
           <div className="text-center py-12">
             <p className="text-muted-foreground">Loading products...</p>
           </div>
+        ) : error ? (
+          <div className="text-center py-12">
+            <p className="text-muted-foreground">{error}</p>
+          </div>
         ) : products.length === 0 ? (
           <div className="text-center py-12">
             <p className="text-muted-foreground">No products found</p>
@@ -166,7 +215,7 @@ export default function Home() {
                   key={product.stacklineSku}
                   href={{
                     pathname: "/product",
-                    query: { product: JSON.stringify(product) },
+                    query: { sku: product.stacklineSku },
                   }}
                 >
                   <Card className="h-full hover:shadow-lg transition-shadow cursor-pointer">
@@ -188,15 +237,33 @@ export default function Home() {
                         {product.title}
                       </CardTitle>
                       <CardDescription className="flex gap-2 flex-wrap">
-                        <Badge variant="secondary">
+                        <Badge
+                          variant="secondary"
+                          className="cursor-pointer"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setSelectedCategory(product.categoryName);
+                            setSelectedSubCategory(undefined);
+                          }}
+                        >
                           {product.categoryName}
                         </Badge>
-                        <Badge variant="outline">
+                        <Badge
+                          variant="outline"
+                          className="cursor-pointer"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setSelectedCategory(product.categoryName);
+                            setSelectedSubCategory(product.subCategoryName);
+                          }}
+                        >
                           {product.subCategoryName}
                         </Badge>
                       </CardDescription>
                     </CardContent>
-                    <CardFooter>
+                    <CardFooter className="mt-auto">
                       <Button variant="outline" className="w-full">
                         View Details
                       </Button>

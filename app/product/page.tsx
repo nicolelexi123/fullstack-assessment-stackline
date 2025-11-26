@@ -8,35 +8,61 @@ import { Badge } from '@/components/ui/badge';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
-
-interface Product {
-  stacklineSku: string;
-  title: string;
-  categoryName: string;
-  subCategoryName: string;
-  imageUrls: string[];
-  featureBullets: string[];
-  retailerSku: string;
-}
+import type { Product } from '@/lib/products'; 
 
 export default function ProductPage() {
   const searchParams = useSearchParams();
-  const productParam = searchParams.get('product');
+  const sku = searchParams.get('sku');
   const [product, setProduct] = useState<Product | null>(null);
   const [selectedImage, setSelectedImage] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (productParam) {
-      try {
-        const parsedProduct = JSON.parse(productParam);
-        setProduct(parsedProduct);
-      } catch (error) {
-        console.error('Failed to parse product data:', error);
-      }
+    if (!sku) {
+      setError('Product not found');
+      return;
     }
-  }, [productParam]);
 
-  if (!product) {
+    setLoading(true);
+    setError(null);
+
+    fetch(`/api/products/${encodeURIComponent(sku)}`)
+      .then((res) => {
+        if (!res.ok) {
+          if (res.status === 404) throw new Error('Product not found');
+          throw new Error('Failed to load product');
+        }
+        return res.json();
+      })
+      .then((data: Product) => {
+        setProduct(data);
+      })
+      .catch((err: unknown) => {
+        console.error('Error loading product', err);
+        const message =
+          err instanceof Error ? err.message : 'Failed to load product';
+        setError(message);
+        setProduct(null);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, [sku]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="container mx-auto px-4 py-8">
+          <Card className="p-8">
+            <p className="text-center text-muted-foreground">Loading product...</p>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !product) {
     return (
       <div className="min-h-screen bg-background">
         <div className="container mx-auto px-4 py-8">
@@ -47,7 +73,9 @@ export default function ProductPage() {
             </Button>
           </Link>
           <Card className="p-8">
-            <p className="text-center text-muted-foreground">Product not found</p>
+            <p className="text-center text-muted-foreground">
+              {error || 'Product not found'}
+            </p>
           </Card>
         </div>
       </div>
@@ -113,24 +141,27 @@ export default function ProductPage() {
                 <Badge variant="outline">{product.subCategoryName}</Badge>
               </div>
               <h1 className="text-3xl font-bold mb-2">{product.title}</h1>
-              <p className="text-sm text-muted-foreground">SKU: {product.retailerSku}</p>
+              <p className="text-sm text-muted-foreground">
+                SKU: {product.retailerSku}
+              </p>
             </div>
 
-            {product.featureBullets.length > 0 && (
-              <Card>
-                <CardContent className="pt-6">
-                  <h2 className="text-lg font-semibold mb-3">Features</h2>
-                  <ul className="space-y-2">
-                    {product.featureBullets.map((feature, idx) => (
-                      <li key={idx} className="flex items-start">
-                        <span className="mr-2 mt-1 h-1.5 w-1.5 rounded-full bg-primary flex-shrink-0" />
-                        <span className="text-sm">{feature}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
-            )}
+            {Array.isArray(product.featureBullets) &&
+              product.featureBullets.length > 0 && (
+                <Card>
+                  <CardContent className="pt-6">
+                    <h2 className="text-lg font-semibold mb-3">Features</h2>
+                    <ul className="space-y-2">
+                      {product.featureBullets.map((feature, idx) => (
+                        <li key={idx} className="flex items-start">
+                          <span className="mr-2 mt-1 h-1.5 w-1.5 rounded-full bg-primary flex-shrink-0" />
+                          <span className="text-sm">{feature}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+              )}
           </div>
         </div>
       </div>
